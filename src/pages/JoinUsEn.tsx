@@ -8,7 +8,7 @@ import {
 import { WhatsAppIcon } from "../components/WhatsAppIcon";
 import { useNavigate } from "react-router-dom";
 import React, { useState, useEffect } from "react";
-import { supabase } from "../supabase";
+import { api } from "../api";
 import { applicationSchemaEn, sanitizeApplication } from "../lib/security";
 import { z } from "zod";
 
@@ -93,12 +93,8 @@ export default function JoinUsEn() {
         status: 'pending'
       });
 
-      // 3. Submit to Supabase
-      const { error } = await supabase
-        .from('applications')
-        .insert([sanitizedData]);
-
-      if (error) throw error;
+      // 3. Submit to MySQL via Express
+      await api.submitApplication(sanitizedData);
       
       setShowSuccess(true);
       if (e.currentTarget) {

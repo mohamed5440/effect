@@ -1,27 +1,19 @@
-# Build stage
-FROM node:20-slim AS build
+FROM node:20-alpine
 
 WORKDIR /app
 
-# Copy package files
+# Copy package.json and install dependencies
 COPY package*.json ./
-
-# Install dependencies
 RUN npm install
 
-# Copy project files
+# Copy all source files
 COPY . .
 
-# Build the project
+# Build the React frontend (creates the dist folder)
 RUN npm run build
 
-# Production stage
-FROM nginx:alpine
+# Expose the port the Express server runs on
+EXPOSE 5000
 
-# Copy the build output to nginx
-COPY --from=build /app/dist /usr/share/nginx/html
-
-# Copy a basic nginx config if needed, or use default
-# EXPOSE 80
-
-CMD ["nginx", "-g", "daemon off;"]
+# Start the Express server
+CMD ["node", "server/index.cjs"]

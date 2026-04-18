@@ -2,7 +2,7 @@ import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { LogOut, Users, Clock, CheckCircle, XCircle, FileText, ChevronDown, Trash2, Search, Filter, Download, ArrowUpDown, Languages, MessageSquare, AlertCircle } from 'lucide-react';
-import { supabase } from '../supabase';
+import { api } from '../api';
 import { sanitize } from '../lib/security';
 
 interface Application {
@@ -54,48 +54,24 @@ export default function AdminDashboard() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const checkAuth = async () => {
-      const { data: { user }, error } = await supabase.auth.getUser();
-      if (error || !user) {
-        navigate('/admin/login');
-        return;
-      }
-    };
-    checkAuth();
-
-    const { data: { subscription: authSubscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (!session) {
-        navigate('/admin/login');
-      }
-    });
+    const user = api.getUser();
+    if (!user) {
+      navigate('/admin/login');
+      return;
+    }
 
     const fetchData = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
       setIsLoading(true);
       setFetchError(null);
       
       try {
-        // Fetch Applications
-        const { data: appData, error: appError } = await supabase
-          .from('applications')
-          .select('*')
-          .order('created_at', { ascending: false })
-          .limit(1000);
+        const [appData, contactData] = await Promise.all([
+          api.getApplications(),
+          api.getContacts()
+        ]);
         
-        if (appError) throw appError;
-        if (appData) setApplications(appData as Application[]);
-
-        // Fetch Contacts
-        const { data: contactData, error: contactError } = await supabase
-          .from('contacts')
-          .select('*')
-          .order('created_at', { ascending: false })
-          .limit(1000);
-        
-        if (contactError) throw contactError;
-        if (contactData) setContacts(contactData as Contact[]);
+        setApplications(appData);
+        setContacts(contactData);
       } catch (err: any) {
         console.error("Error fetching data:", err);
         setFetchError(err.message || "حدث خطأ أثناء تحميل البيانات من قاعدة البيانات.");
@@ -105,39 +81,6 @@ export default function AdminDashboard() {
     };
 
     fetchData();
-
-    // Set up real-time subscriptions
-    const appSubscription = supabase
-      .channel('applications_changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'applications' }, (payload) => {
-        if (payload.eventType === 'INSERT') {
-          setApplications(prev => [payload.new as Application, ...prev]);
-        } else if (payload.eventType === 'UPDATE') {
-          setApplications(prev => prev.map(app => app.id === payload.new.id ? payload.new as Application : app));
-        } else if (payload.eventType === 'DELETE') {
-          setApplications(prev => prev.filter(app => app.id !== payload.old.id));
-        }
-      })
-      .subscribe();
-
-    const contactSubscription = supabase
-      .channel('contacts_changes')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'contacts' }, (payload) => {
-        if (payload.eventType === 'INSERT') {
-          setContacts(prev => [payload.new, ...prev]);
-        } else if (payload.eventType === 'UPDATE') {
-          setContacts(prev => prev.map(contact => contact.id === payload.new.id ? payload.new : contact));
-        } else if (payload.eventType === 'DELETE') {
-          setContacts(prev => prev.filter(contact => contact.id !== payload.old.id));
-        }
-      })
-      .subscribe();
-
-    return () => {
-      authSubscription.unsubscribe();
-      supabase.removeChannel(appSubscription);
-      supabase.removeChannel(contactSubscription);
-    };
   }, [navigate]);
 
   const showToast = (text: string, type: 'success' | 'error' = 'success') => {
@@ -145,20 +88,16 @@ export default function AdminDashboard() {
     setTimeout(() => setToastMessage(null), 3000);
   };
 
-  const handleLogout = async () => {
-    await supabase.auth.signOut();
+  const handleLogout = () => {
+    api.logout();
     navigate('/admin/login');
   };
 
   const updateStatus = async (id: string, newStatus: Application['status']) => {
     setIsUpdating(id);
     try {
-      const { error } = await supabase
-        .from('applications')
-        .update({ status: newStatus })
-        .eq('id', id);
-        
-      if (error) throw error;
+      await api.updateApplicationStatus(id, newStatus);
+      setApplications(prev => prev.map(app => app.id === id ? { ...app, status: newStatus } : app));
       showToast('تم تحديث حالة الطلب بنجاح');
     } catch (error) {
       console.error("Error updating status:", error);
@@ -169,14 +108,15 @@ export default function AdminDashboard() {
   };
 
   const deleteItem = async (id: string) => {
-    const table = activeTab === 'applications' ? 'applications' : 'contacts';
     try {
-      const { error } = await supabase
-        .from(table)
-        .delete()
-        .eq('id', id);
-        
-      if (error) throw error;
+      if (activeTab === 'applications') {
+        await api.deleteApplication(id);
+        setApplications(prev => prev.filter(app => app.id !== id));
+      } else {
+        await api.deleteContact(id);
+        setContacts(prev => prev.filter(contact => contact.id !== id));
+      }
+      
       showToast('تم الحذف بنجاح');
       setIsDeleting(null);
     } catch (error) {

@@ -6,7 +6,7 @@ import {
 import { WhatsAppIcon } from "../components/WhatsAppIcon";
 import { useNavigate } from "react-router-dom";
 import React, { useState, useEffect } from "react";
-import { supabase } from "../supabase";
+import { api } from "../api";
 
 export default function AdminLogin() {
   const navigate = useNavigate();
@@ -17,27 +17,12 @@ export default function AdminLogin() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
 
-  const isSupabaseConfigured = !!import.meta.env.VITE_SUPABASE_URL && !!import.meta.env.VITE_SUPABASE_ANON_KEY;
-
   useEffect(() => {
-    if (!isSupabaseConfigured) return;
-
-    const checkUser = async () => {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (user) {
-        navigate('/admin/dashboard');
-      }
-    };
-    checkUser();
-    
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(async (event, session) => {
-      if (event === 'SIGNED_IN' && session) {
-        navigate('/admin/dashboard');
-      }
-    });
-
-    return () => subscription.unsubscribe();
-  }, [navigate, isSupabaseConfigured]);
+    const user = api.getUser();
+    if (user) {
+      navigate('/admin/dashboard');
+    }
+  }, [navigate]);
 
   useEffect(() => {
     const handleScroll = () => setIsScrolled(window.scrollY > 20);
@@ -76,35 +61,12 @@ export default function AdminLogin() {
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!isSupabaseConfigured) {
-      setShowError('لم يتم إعداد روابط Supabase. يرجى إضافتها في إعدادات المشروع.');
-      return;
-    }
-
-    if (!email || !password) {
-      setShowError('يرجى إدخال البريد الإلكتروني وكلمة المرور.');
-      return;
-    }
-    
-    setIsSubmitting(true);
-    setShowError(null);
     try {
-      const { error: signInError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
-
-      if (signInError) throw signInError;
+      await api.login(email, password);
+      navigate('/admin/dashboard');
     } catch (err: any) {
       console.error("Login error:", err);
-
-      if (err.message === 'Invalid login credentials') {
-        setShowError('البريد الإلكتروني أو كلمة المرور غير صحيحة.');
-      } else if (err.message === 'Email not confirmed') {
-        setShowError('يرجى تأكيد بريدك الإلكتروني أولاً.');
-      } else {
-        setShowError(err.message || 'حدث خطأ في الاتصال بقاعدة البيانات.');
-      }
+      setShowError(err.message || 'البريد الإلكتروني أو كلمة المرور غير صحيحة.');
     } finally {
       setIsSubmitting(false);
     }
@@ -363,15 +325,6 @@ export default function AdminLogin() {
               <p className="text-xs text-white/40 mr-11">أدخل بيانات الاعتماد الخاصة بك للمتابعة.</p>
             </div>
             
-            {!isSupabaseConfigured && (
-              <div className="bg-yellow-500/10 border border-yellow-500/20 text-yellow-400 p-4 rounded-xl flex items-start gap-3 text-sm leading-relaxed">
-                <Settings size={24} className="shrink-0 mt-0.5" />
-                <div>
-                  <p className="font-bold mb-1">إعدادات Supabase مفقودة!</p>
-                  <p>يرجى الذهاب إلى إعدادات المشروع وإضافة المتغيرات المطلوبة.</p>
-                </div>
-              </div>
-            )}
 
             <div className="flex flex-col gap-6">
               <div className="flex flex-col gap-2">
@@ -383,7 +336,7 @@ export default function AdminLogin() {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     required 
-                    disabled={!isSupabaseConfigured}
+                    disabled={isSubmitting}
                     placeholder="admin@example.com" 
                     className="w-full bg-white/5 border border-white/10 rounded-xl py-3.5 px-12 text-white placeholder:text-white/20 focus:outline-none focus:border-accent/50 focus:bg-white/10 transition-all disabled:opacity-50" 
                     dir="ltr" 
@@ -400,7 +353,7 @@ export default function AdminLogin() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     required 
-                    disabled={!isSupabaseConfigured}
+                    disabled={isSubmitting}
                     placeholder="••••••••" 
                     className="w-full bg-white/5 border border-white/10 rounded-xl py-3.5 px-12 text-white placeholder:text-white/20 focus:outline-none focus:border-accent/50 focus:bg-white/10 transition-all disabled:opacity-50" 
                     dir="ltr" 
@@ -413,7 +366,7 @@ export default function AdminLogin() {
           {/* Submit Button */}
           <button 
             type="submit" 
-            disabled={isSubmitting || !isSupabaseConfigured}
+            disabled={isSubmitting}
             className="w-full bg-accent text-white py-5 rounded-2xl font-black text-lg flex items-center justify-center gap-3 hover:bg-accent-light transition-all disabled:opacity-70 disabled:cursor-not-allowed mt-4 group"
           >
             {isSubmitting ? (
